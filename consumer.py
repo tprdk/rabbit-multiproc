@@ -13,6 +13,7 @@ import pika
 
 LOG_FORMAT = "%(levelname)s:%(asctime)s:%(name)s:%(message)s"
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
 class PikaConsumer(object):
@@ -256,7 +257,7 @@ class ReconnectingExampleConsumer(Process):
 
 def main():
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-    amqp_url = 'amqp://user:bitnami@localhost:5672/%2F'
+    amqp_url = 'amqp://user:bitnami@localhost:5672'
 
     shutdown = Event()
     consumer = ReconnectingExampleConsumer(amqp_url, shutdown_event=shutdown)

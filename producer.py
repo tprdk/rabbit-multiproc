@@ -37,7 +37,7 @@ class PikaPublisher(Thread):
     ROUTING_KEY = 'custom-q'
 
     def __init__(self, amqp_url: str):
-        """Setup the example publisher object, passing in the URL we will use
+        """Set up the example publisher object, passing in the URL we will use
         to connect to RabbitMQ.
 
         :param str amqp_url: The URL for connecting to RabbitMQ
@@ -196,6 +196,7 @@ class PikaPublisher(Thread):
         """
         LOGGER.info('Declaring queue %s', queue_name)
         self._channel.queue_declare(queue=queue_name,
+                                    arguments={"x-max-priority": 20, "x-message-ttl": 60000},
                                     callback=self.on_queue_declareok)
 
     def on_queue_declareok(self, _unused_frame):
@@ -403,12 +404,25 @@ class RabbitPublisher(Process):
         """ Mainloop """
         self.init()
         while not self.shutdown_event.is_set():
-            sleep(1)
-            print("XAXAXAXA")
+            try:
+                LOGGER.warning("::::: XAXAXAXA")
+                sleep(1)
+            except KeyboardInterrupt as e:
+                LOGGER.warning("::::: Stopping publisher")
+                self.publisher.stop()
+                LOGGER.warning("::::: Stopped publisher")
+
+                LOGGER.warning("::::: Joining publisher")
+                self.publisher.join()
+                LOGGER.warning("::::: Joining publisher")
+
+                LOGGER.warning("::::: Stopping RabbitPublisher")
+                self.shutdown_event.set()
+                LOGGER.warning("::::: Stopped RabbitPublisher")
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT)
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 
     shutdown_event = Event()
     job_q = Queue()
