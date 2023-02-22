@@ -1,6 +1,6 @@
 """ Multiprocess consumer producer rabbit main. """
 import logging
-from multiprocessing import Event, Queue
+from multiprocessing import Event, Queue, Manager
 from time import sleep
 
 from consumer import RabbitConsumer
@@ -18,6 +18,9 @@ def main() -> None:
 
     LOGGER.info("Starting main ...")
     shutdown_event = Event()
+    manager = Manager()
+
+    _map = manager.dict()
 
     reader_q = Queue()
     writer_q = Queue()
@@ -29,7 +32,8 @@ def main() -> None:
         amqp_url='amqp://user:bitnami@localhost:5672?connection_attempts=3&heartbeat=3600',
         name="RabbitPublisherProc",
         shutdown_event=shutdown_event,
-        job_q=reader_q
+        job_q=reader_q,
+        _map=_map
     )
 
     consumer = RabbitConsumer(
@@ -74,6 +78,9 @@ def main() -> None:
 
     LOGGER.info("!!!! Stopping Child procs. ")
     shutdown_event.set()
+
+    LOGGER.info("!!!! Stopping Manager.")
+    manager.shutdown()
 
 
 if __name__ == '__main__':

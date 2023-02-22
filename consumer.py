@@ -13,7 +13,6 @@ import pika
 
 from ulogger import LOG_FORMAT
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -232,12 +231,12 @@ class RabbitConsumer(Process):
         self.shutdown_event: Event = shutdown_event
         self.job_q = job_q
 
-
     def init(self):
         self._consumer = PikaConsumer(amqp_url=self._amqp_url, job_q=self.job_q)
 
     def run(self):
         self.init()
+        assert self._consumer is not None
 
         while not self.shutdown_event.is_set():
             try:
@@ -254,7 +253,7 @@ class RabbitConsumer(Process):
             reconnect_delay = self._get_reconnect_delay()
             LOGGER.info('Reconnecting after %d seconds', reconnect_delay)
             time.sleep(reconnect_delay)
-            self._consumer = PikaConsumer(self._amqp_url)
+            self._consumer = PikaConsumer(self._amqp_url, self.job_q)
 
     def _get_reconnect_delay(self):
         if self._consumer.was_consuming:

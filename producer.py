@@ -8,6 +8,7 @@ from multiprocessing import Process, Event, Queue
 from queue import Empty
 from threading import Thread
 from time import sleep
+from typing import Dict
 
 import pika
 from pika.exchange_type import ExchangeType
@@ -36,7 +37,7 @@ class PikaPublisher(Thread):
     QUEUE = 'custom-q'
     ROUTING_KEY = 'custom-q'
 
-    def __init__(self, amqp_url: str, job_q: Queue):
+    def __init__(self, amqp_url: str, job_q: Queue, _map: Dict):
         """Set up the example publisher object, passing in the URL we will use
         to connect to RabbitMQ.
 
@@ -56,6 +57,7 @@ class PikaPublisher(Thread):
         self._url = amqp_url
 
         self.job_q = job_q
+        self._map = _map
 
     def connect(self):
         """This method connects to RabbitMQ, returning the connection handle.
@@ -273,6 +275,9 @@ class PikaPublisher(Thread):
         elif confirmation_type == 'nack':
             self._nacked += 1
 
+        self._map["acked"] = self._acked
+        self._map["n_acked"] = self._nacked
+
         del self._deliveries[delivery_tag]
 
         if ack_multiple:
@@ -394,7 +399,8 @@ class RabbitPublisher(Process):
                  amqp_url: str,
                  name: str,
                  shutdown_event: Event,
-                 job_q: Queue
+                 job_q: Queue,
+                 _map: Dict
                  ):
         super().__init__(name=name)
         self.amqp_url = amqp_url
@@ -403,10 +409,11 @@ class RabbitPublisher(Process):
 
         self.publisher: PikaPublisher = None
         self.job_q = job_q
+        self._map = _map
 
     def init(self):
         """ Initializes rabbit producer """
-        self.publisher = PikaPublisher(amqp_url=self.amqp_url, job_q=self.job_q)
+        self.publisher = PikaPublisher(amqp_url=self.amqp_url, job_q=self.job_q, _map=self._map)
         self.publisher.start()
 
     def run(self) -> None:
