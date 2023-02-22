@@ -4,16 +4,16 @@
 import functools
 import logging
 import json
-import random
 from multiprocessing import Process, Event, Queue
+from queue import Empty
 from threading import Thread
 from time import sleep
 
 import pika
 from pika.exchange_type import ExchangeType
 
-LOG_FORMAT = ('%(levelname) -10s %(asctime)s %(name) -30s %(funcName) '
-              '-35s %(lineno) -5d: %(message)s')
+from ulogger import LOG_FORMAT
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -36,7 +36,7 @@ class PikaPublisher(Thread):
     QUEUE = 'custom-q'
     ROUTING_KEY = 'custom-q'
 
-    def __init__(self, amqp_url: str):
+    def __init__(self, amqp_url: str, job_q: Queue):
         """Set up the example publisher object, passing in the URL we will use
         to connect to RabbitMQ.
 
@@ -54,6 +54,8 @@ class PikaPublisher(Thread):
 
         self._stopping = False
         self._url = amqp_url
+
+        self.job_q = job_q
 
     def connect(self):
         """This method connects to RabbitMQ, returning the connection handle.
@@ -319,13 +321,20 @@ class PikaPublisher(Thread):
                                           content_type='application/json',
                                           headers=headers)
 
-        message = f':::: new - message : {random.randint(0, 100)}'
-        self._channel.basic_publish(self.EXCHANGE, self.ROUTING_KEY,
-                                    json.dumps(message, ensure_ascii=False),
-                                    properties)
-        self._message_number += 1
-        self._deliveries[self._message_number] = True
-        LOGGER.info('Published message # %i', self._message_number)
+        try:
+            message = self.job_q.get(timeout=0.1)
+            # LOGGER.info(f'Received message from reader : {message}')
+
+            self._channel.basic_publish(self.EXCHANGE, self.ROUTING_KEY,
+                                        json.dumps(message, ensure_ascii=False),
+                                        properties)
+            self._message_number += 1
+            self._deliveries[self._message_number] = True
+            LOGGER.info('Published message # %i', self._message_number)
+
+        except Empty:
+            pass
+
         self.schedule_next_message()
 
     def run(self):
@@ -397,7 +406,7 @@ class RabbitPublisher(Process):
 
     def init(self):
         """ Initializes rabbit producer """
-        self.publisher = PikaPublisher(amqp_url=self.amqp_url, )
+        self.publisher = PikaPublisher(amqp_url=self.amqp_url, job_q=self.job_q)
         self.publisher.start()
 
     def run(self) -> None:
@@ -410,15 +419,15 @@ class RabbitPublisher(Process):
             except KeyboardInterrupt as e:
                 LOGGER.warning("::::: Stopping publisher")
                 self.publisher.stop()
-                LOGGER.warning("::::: Stopped publisher")
+                LOGGER.warning("::::: Stopped end publisher")
 
                 LOGGER.warning("::::: Joining publisher")
                 self.publisher.join()
-                LOGGER.warning("::::: Joining publisher")
+                LOGGER.warning("::::: Joining end publisher")
 
                 LOGGER.warning("::::: Stopping RabbitPublisher")
                 self.shutdown_event.set()
-                LOGGER.warning("::::: Stopped RabbitPublisher")
+                LOGGER.warning("::::: Stopped end RabbitPublisher")
 
 
 def main():

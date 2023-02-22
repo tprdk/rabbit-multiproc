@@ -5,15 +5,16 @@ import functools
 import json
 import logging
 import time
-from multiprocessing import Process, Event
+from multiprocessing import Process, Event, Queue
 
 from pika.exchange_type import ExchangeType
 import traceback
 import pika
 
-LOG_FORMAT = "%(levelname)s:%(asctime)s:%(name)s:%(message)s"
+from ulogger import LOG_FORMAT
+
+
 LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.INFO)
 
 
 class PikaConsumer(object):
@@ -22,7 +23,7 @@ class PikaConsumer(object):
     QUEUE = 'custom-q'
     ROUTING_KEY = 'custom-q'
 
-    def __init__(self, amqp_url):
+    def __init__(self, amqp_url: str, job_q: Queue):
         self.should_reconnect = False
         self.was_consuming = False
 
@@ -33,6 +34,7 @@ class PikaConsumer(object):
         self._url = amqp_url
         self._consuming = False
         self._prefetch_count = 1
+        self.job_q = job_q
 
     def connect(self):
         LOGGER.info('Connecting to %s', self._url)
@@ -154,9 +156,10 @@ class PikaConsumer(object):
     def on_message(self, _unused_channel, basic_deliver, properties, body):
         LOGGER.debug('Received message # %s: %s',
                      basic_deliver.delivery_tag, body)
-
         try:
             receive = json.loads(body)
+            LOGGER.info(f"Consumed message : {receive}")
+            self.job_q.put(receive)
         except Exception as e:
             traceback.print_exc()
             LOGGER.error(e)
@@ -211,7 +214,7 @@ class PikaConsumer(object):
             LOGGER.info('Stopped')
 
 
-class ReconnectingExampleConsumer(Process):
+class RabbitConsumer(Process):
     """This is an example consumer that will reconnect if the nested
     ExampleConsumer indicates that a reconnect is necessary.
 
@@ -219,15 +222,23 @@ class ReconnectingExampleConsumer(Process):
 
     def __init__(self,
                  amqp_url: str,
-                 shutdown_event: Event):
+                 shutdown_event: Event,
+                 job_q: Queue):
         super().__init__()
         self._reconnect_delay = 0
         self._amqp_url = amqp_url
-        self._consumer = PikaConsumer(self._amqp_url)
+        self._consumer: PikaConsumer = None
 
         self.shutdown_event: Event = shutdown_event
+        self.job_q = job_q
+
+
+    def init(self):
+        self._consumer = PikaConsumer(amqp_url=self._amqp_url, job_q=self.job_q)
 
     def run(self):
+        self.init()
+
         while not self.shutdown_event.is_set():
             try:
                 self._consumer.run()
@@ -259,8 +270,9 @@ def main():
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     amqp_url = 'amqp://user:bitnami@localhost:5672'
 
+    job_q = Queue()
     shutdown = Event()
-    consumer = ReconnectingExampleConsumer(amqp_url, shutdown_event=shutdown)
+    consumer = RabbitConsumer(amqp_url, shutdown_event=shutdown, job_q=job_q)
     consumer.start()
 
 
